@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Shift Tracker with Reporting (Live)</title>
+    <title>GPS Shift Tracker (Final Local)</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -43,34 +43,6 @@
             }
         }
     </style>
-    
-    <!-- !!! CORE FIREBASE JAVASCRIPT CODE INLINED HERE !!! 
-         This provides necessary functionality for the external Firebase SDK.
-         NOTE: This is the version designed to be hosted on a live server (HTTPS). -->
-    <script type="text/javascript">
-        // Inlining minimal service stubs for external library function calls
-        function initializeApp(config) { return { config: config }; }
-        function getAuth(app) { return { currentUser: { uid: 'live_user_id' } }; }
-        function getFirestore(app) { return {}; }
-        function doc(db, path, id) { return { path, id }; }
-        function collection(db, path) { return { path }; }
-        function query(collectionRef, ...constraints) { return { collectionRef, constraints }; }
-        function where(field, op, value) { return { type: 'where', field, op, value }; }
-        function setLogLevel(level) {}
-        function getDocs() { return Promise.resolve({ docs: [] }); }
-
-        // Mocked functions for the local environment setup ONLY. 
-        // These will be overridden by the *real* firebase imports when hosted on GitHub.
-        window.initializeApp = initializeApp;
-        window.getAuth = getAuth;
-        window.getFirestore = getFirestore;
-        window.doc = doc;
-        window.collection = collection;
-        window.query = query;
-        window.where = where;
-        window.setLogLevel = setLogLevel;
-        
-    </script>
 </head>
 <body class="min-h-screen p-4 flex flex-col items-center">
     <div class="container w-full bg-white p-6 rounded-xl shadow-main mt-8">
@@ -88,7 +60,7 @@
         <!-- Shift Tracker View -->
         <div id="trackerView">
             <h1 class="text-3xl font-bold text-center text-indigo-700 mb-2">Shift Tracker</h1>
-            <p class="text-center text-sm text-gray-500 mb-6">Location-verified clock-in/out.</p>
+            <p class="text-center text-sm text-gray-500 mb-6">Local Storage Edition</p>
 
             <!-- Geofence Information -->
             <div id="geofenceInfo" class="bg-blue-50 p-4 rounded-lg mb-6 border-l-4 border-blue-500">
@@ -105,19 +77,19 @@
 
             <!-- Status & User Info -->
             <div id="userInfo" class="bg-gray-100 p-4 rounded-lg mb-6">
-                <p class="font-semibold text-gray-700">Status: <span id="statusDisplay" class="font-bold text-red-500">Loading...</span></p>
-                <p class="text-xs text-gray-500 mt-1">User ID: <span id="userIdDisplay" class="font-mono text-xs break-all">...</span></p>
-                <p class="text-xs text-gray-500 mt-1">Current Shift ID: <span id="currentShiftId" class="font-mono text-xs break-all text-indigo-600">None</span></p>
+                <p class="font-semibold text-gray-700">Status: <span id="statusDisplay" class="font-bold text-green-600">Off Clock</span></p>
+                <p class="text-xs text-gray-500 mt-1">Storage Key: <span id="storageKeyDisplay" class="font-mono text-xs break-all">Local Shifts</span></p>
+                <p class="text-xs text-gray-500 mt-1">Current Shift: <span id="currentShiftId" class="font-mono text-xs break-all text-indigo-600">None</span></p>
             </div>
 
-            <!-- Action Buttons: Clock In button starts active to bypass security locks -->
+            <!-- Action Buttons -->
             <div class="flex space-x-4 mb-8">
                 <button id="clockInBtn" 
-                        class="flex-1 py-3 px-4 rounded-lg font-bold text-white transition duration-300 bg-green-500 hover:bg-green-600 focus:outline-none focus:ring-4 focus:ring-green-300 disabled:opacity-50">
+                        class="flex-1 py-3 px-4 rounded-lg font-bold text-white transition duration-300 bg-green-500 hover:bg-green-600 focus:outline-none focus:ring-4 focus:ring-green-300">
                     Clock In
                 </button>
                 <button id="clockOutBtn" 
-                        class="flex-1 py-3 px-4 rounded-lg font-bold text-white transition duration-300 bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 disabled:opacity-50"
+                        class="flex-1 py-3 px-4 rounded-lg font-bold text-white transition duration-300 bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300"
                         disabled>
                     Clock Out
                 </button>
@@ -127,7 +99,7 @@
             <div id="messageBox" class="p-3 bg-yellow-100 text-yellow-800 rounded-lg hidden"></div>
 
             <!-- Shift History -->
-            <h2 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-1">Recent Shifts</h2>
+            <h2 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-1">Recent Shifts (Local)</h2>
             <div id="shiftHistory" class="space-y-4">
                 <p class="text-center text-gray-500" id="loadingHistory">Loading history...</p>
             </div>
@@ -168,30 +140,21 @@
 
     </div>
     
-    <script type="module">
-        // Dynamically Import Real Firebase Libraries (This REQUIRES the HTTPS link)
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, updateDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+    <script type="text/javascript">
         // --- Geofence Configuration ---
-        const PROXIMITY_CHECK_INTERVAL = 30000; 
+        const PROXIMITY_CHECK_INTERVAL = 30000; // Check location every 30 seconds
+        const LOCAL_STORAGE_KEY = 'shiftTrackerData';
         
         const WORK_LOCATION = {
+            // Location: London, UK (51.4857806, -0.1995771)
             lat: 51.4857806, 
             lng: -0.1995771, 
-            radiusMeters: 100 
+            radiusMeters: 100 // Allowed distance from center point to clock in/out
         };
         
-        // --- Global Variables ---
-        let app;
-        let db;
-        let auth;
-        let userId = null;
+        // --- Global State Variables ---
         let currentShiftIdValue = null;
         let proximityInterval = null; 
-        let isNearWork = false; 
 
         // HTML Elements
         const trackerView = document.getElementById('trackerView');
@@ -199,7 +162,6 @@
         const showTrackerBtn = document.getElementById('showTrackerBtn');
         const showReportBtn = document.getElementById('showReportBtn');
         const statusDisplay = document.getElementById('statusDisplay');
-        const userIdDisplay = document.getElementById('userIdDisplay');
         const currentShiftId = document.getElementById('currentShiftId');
         const clockInBtn = document.getElementById('clockInBtn');
         const clockOutBtn = document.getElementById('clockOutBtn');
@@ -213,12 +175,6 @@
         const totalHoursDisplay = document.getElementById('totalHours');
         const reportTableBody = document.querySelector('#reportTable tbody');
 
-        // Firestore Config 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const __initial_auth_token = typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : undefined;
-        const SHIFTS_COLLECTION_PATH = `/artifacts/${appId}/users/`; 
-        
         // Initialize Geofence UI Display
         workLat.textContent = WORK_LOCATION.lat.toFixed(6);
         workLng.textContent = WORK_LOCATION.lng.toFixed(6);
@@ -248,28 +204,33 @@
                 }, 5000);
             }
         }
+
+        // --- Local Storage Functions (CRITICAL for this version) ---
+
+        function getShifts() {
+            // Load shift data from the browser's local memory
+            const data = localStorage.getItem(LOCAL_STORAGE_KEY);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveShifts(shifts) {
+            // Save shift data to the browser's local memory
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(shifts));
+            updateUI(shifts); // Update the interface immediately after saving
+        }
+
+        function getActiveShift(shifts) {
+            return shifts.find(s => s.status === 'active');
+        }
+
+        function generateShiftId() {
+            // Since there is no database, we use the timestamp as a unique ID
+            return Date.now().toString(); 
+        }
         
-        // --- Calendar Integration Function ---
-
-        function formatToGoogleCalendarTime(isoString) {
-            return isoString.replace(/[-:]/g, '').split('.')[0] + 'Z';
-        }
-
-        function createCalendarEventLink(startTimeISO, endTimeISO, durationHours) {
-            const startFormat = formatToGoogleCalendarTime(startTimeISO);
-            const endFormat = formatToGoogleCalendarTime(endTimeISO);
-            
-            const startDate = new Date(startTimeISO).toLocaleDateString('en-US');
-
-            const title = encodeURIComponent(`[Shift] ${startDate} (${durationHours} hrs)`);
-            const details = encodeURIComponent(`Shift recorded via GPS Shift Tracker App.\nStart: ${new Date(startTimeISO).toLocaleString()}\nEnd: ${new Date(endTimeISO).toLocaleString()}`);
-            const location = encodeURIComponent(`Work Site (Geofence: ${WORK_LOCATION.lat.toFixed(6)}, ${WORK_LOCATION.lng.toFixed(6)})`);
-
-            return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${startFormat}/${endFormat}&details=${details}&location=${location}&sf=true&output=xml`;
-        }
-
         // --- Geolocation and Distance Calculation ---
 
+        // Haversine distance calculation
         function getDistance(lat1, lon1, lat2, lon2) {
             const R = 6371e3; 
             const φ1 = lat1 * Math.PI/180;
@@ -282,11 +243,12 @@
                       Math.sin(Δλ/2) * Math.sin(Δλ/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
-            const d = R * c; 
+            const d = R * c; // in meters
             return d;
         }
 
         function getCurrentLocation() {
+            // This relies on the browser's native GPS API, which is now allowed on HTTPS
             return new Promise((resolve, reject) => {
                 if (navigator.geolocation) {
                     if (!proximityInterval) {
@@ -306,7 +268,7 @@
                         (error) => {
                             let msg = "Geolocation failed: ";
                             if (error.code === error.PERMISSION_DENIED) {
-                                msg += "Permission Denied. Please enable location services.";
+                                msg += "Permission Denied. Enable location services for this browser.";
                             } else if (error.code === error.POSITION_UNAVAILABLE) {
                                 msg += "Location information is unavailable.";
                             } else if (error.code === error.TIMEOUT) {
@@ -334,7 +296,8 @@
         // --- Proximity Check Functions ---
 
         async function checkProximity() {
-            if (!userId || currentShiftIdValue) {
+            const shifts = getShifts();
+            if (getActiveShift(shifts)) {
                 return stopProximityCheck();
             }
 
@@ -361,6 +324,7 @@
                 }
 
             } catch (error) {
+                // Suppress constant error messages for background checks
                 proximityReminder.classList.add('hidden');
                 clockInBtn.classList.remove('animate-pulse');
             }
@@ -381,17 +345,17 @@
             clockInBtn.classList.remove('animate-pulse');
         }
 
-        // --- Database Functions ---
+        // --- Clock In/Out Logic ---
         
         async function clockIn() {
-            // CRITICAL: Ensure AUTH is ready before proceeding
-            if (!userId) {
-                return showMessage("Authentication is still initializing. Please wait a moment.", 'red');
-            }
+            const shifts = getShifts();
+            if (getActiveShift(shifts)) return showMessage("Already clocked in.", 'red');
 
             try {
+                // 1. Get location (This is where the GPS prompt will appear)
                 const location = await getCurrentLocation();
                 
+                // 2. Perform Geofence Check
                 const distance = getDistance(
                     location.lat, location.lng, 
                     WORK_LOCATION.lat, WORK_LOCATION.lng
@@ -399,139 +363,124 @@
                 
                 if (distance > WORK_LOCATION.radiusMeters) {
                     return showMessage(
-                        `Clock-in denied. You are ${distance.toFixed(2)}m away from the work location. Max allowed is ${WORK_LOCATION.radiusMeters}m.`, 
+                        `Clock-in denied. You are ${distance.toFixed(2)}m away from work. Max allowed is ${WORK_LOCATION.radiusMeters}m.`, 
                         'red'
                     );
                 }
 
-                const shiftData = {
-                    userId: userId,
+                // 3. Create new shift
+                const newShift = {
+                    id: generateShiftId(),
                     startTime: location.timestamp,
                     startLocation: location,
                     startDistance: distance.toFixed(2), 
                     endTime: null,
                     endLocation: null,
-                    endDistance: null,
                     duration: null,
                     status: 'active',
                 };
+                shifts.push(newShift);
+                saveShifts(shifts);
 
-                const shiftsRef = collection(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`);
-                const docRef = await addDoc(shiftsRef, shiftData);
-
-                showMessage(`Clocked in successfully! Distance to site: ${distance.toFixed(2)}m. Shift ID: ${docRef.id}`, 'green');
-                stopProximityCheck(); 
+                showMessage(`Clocked in successfully! Distance to site: ${distance.toFixed(2)}m.`, 'green');
+                stopProximityCheck();
 
             } catch (error) {
                 console.error("Error during clock in:", error);
                 if (error.message.includes("Geolocation failed")) return;
-                showMessage("Failed to clock in. Check console for details.", 'red');
+                showMessage("Failed to clock in. See console for details.", 'red');
             }
         }
 
         async function clockOut() {
-            if (!userId || !currentShiftIdValue) return showMessage("No active shift to clock out from.", 'red');
+            let shifts = getShifts();
+            const activeShiftIndex = shifts.findIndex(s => s.status === 'active');
+            if (activeShiftIndex === -1) return showMessage("No active shift to clock out from.", 'red');
             
             try {
                 const location = await getCurrentLocation();
-                const shiftRef = doc(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`, currentShiftIdValue);
+                const shiftToUpdate = shifts[activeShiftIndex];
 
+                // 1. Calculate duration
+                const now = new Date();
+                const startTime = new Date(shiftToUpdate.startTime);
+                const durationMs = now.getTime() - startTime.getTime();
+                const durationHours = (durationMs / (1000 * 60 * 60)).toFixed(2);
+                
+                // 2. Geofence Check (Log distance)
                 const distance = getDistance(
                     location.lat, location.lng, 
                     WORK_LOCATION.lat, WORK_LOCATION.lng
                 );
                 
-                const now = new Date();
-                const startTimeISO = currentShiftId.dataset.startTime;
-                const startTime = new Date(startTimeISO);
-                const durationMs = now.getTime() - startTime.getTime();
-                const durationHours = (durationMs / (1000 * 60 * 60)).toFixed(2);
+                // 3. Update shift object
+                shiftToUpdate.endTime = location.timestamp;
+                shiftToUpdate.endLocation = location;
+                shiftToUpdate.endDistance = distance.toFixed(2); 
+                shiftToUpdate.duration = parseFloat(durationHours);
+                shiftToUpdate.status = 'completed';
                 
-                const updateData = {
-                    endTime: location.timestamp,
-                    endLocation: location,
-                    endDistance: distance.toFixed(2), 
-                    duration: parseFloat(durationHours),
-                    status: 'completed',
-                };
-                
-                await updateDoc(shiftRef, updateData);
+                shifts[activeShiftIndex] = shiftToUpdate;
+                saveShifts(shifts);
 
-                const calendarLink = createCalendarEventLink(startTimeISO, updateData.endTime, durationHours);
+                // 4. Generate Calendar Link
+                const calendarLink = createCalendarEventLink(shiftToUpdate.startTime, shiftToUpdate.endTime, durationHours);
                 
                 showMessage(
-                    `Clocked out. Duration: ${durationHours} hrs. Data saved to Firestore.`, 
+                    `Clocked out. Duration: ${durationHours} hrs. Data saved locally.`, 
                     'green', 
-                    calendarLink 
+                    calendarLink
                 );
-                startProximityCheck(); 
+                startProximityCheck();
 
             } catch (error) {
                 console.error("Error during clock out:", error);
                 if (error.message.includes("Geolocation failed")) return;
-                showMessage("Failed to clock out. Check console for details.", 'red');
+                showMessage("Failed to clock out. See console.", 'red');
             }
+        }
+
+        // --- Calendar Function ---
+
+        function createCalendarEventLink(startTimeISO, endTimeISO, durationHours) {
+            const startFormat = startTimeISO.replace(/[-:]/g, '').split('.')[0] + 'Z';
+            const endFormat = endTimeISO.replace(/[-:]/g, '').split('.')[0] + 'Z';
+            
+            const startDate = new Date(startTimeISO).toLocaleDateString('en-US');
+
+            const title = encodeURIComponent(`[Shift] ${startDate} (${durationHours} hrs)`);
+            const details = encodeURIComponent(`Shift recorded via Local Tracker App.\nStart: ${new Date(startTimeISO).toLocaleString()}\nEnd: ${new Date(endTimeISO).toLocaleString()}`);
+            const location = encodeURIComponent(`Work Site (Geofence: ${WORK_LOCATION.lat.toFixed(6)}, ${WORK_LOCATION.lng.toFixed(6)})`);
+
+            return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${startFormat}/${endFormat}&details=${details}&location=${location}&sf=true&output=xml`;
         }
 
         // --- UI & State Management ---
 
-        function attachShiftListener() {
-            if (!db || !userId) return;
+        function updateUI(shifts) {
+            shifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+            
+            const activeShift = getActiveShift(shifts);
 
-            // Listener for the active shift status
-            const activeQ = query(
-                collection(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`),
-                where("userId", "==", userId),
-                where("status", "==", "active")
-            );
-
-            onSnapshot(activeQ, (snapshot) => {
-                if (snapshot.empty) {
-                    currentShiftIdValue = null;
-                    statusDisplay.textContent = "Off Clock";
-                    statusDisplay.className = "font-bold text-green-600";
-                    currentShiftId.textContent = "None";
-                    clockInBtn.disabled = false;
-                    clockOutBtn.disabled = true;
-                    
-                    startProximityCheck(); 
-                } else {
-                    const activeShift = snapshot.docs[0];
-                    currentShiftIdValue = activeShift.id;
-                    
-                    statusDisplay.textContent = "On Clock";
-                    statusDisplay.className = "font-bold text-red-600";
-                    currentShiftId.textContent = activeShift.id;
-                    currentShiftId.dataset.startTime = activeShift.data().startTime; 
-                    clockInBtn.disabled = true; 
-                    clockOutBtn.disabled = false;
-                    
-                    stopProximityCheck(); 
-                }
-            }, (error) => {
-                console.error("Error listening to active shift:", error);
-                showMessage("Error loading active shift status.", 'red');
-            });
-
-            // Listener for all shifts (for history and reporting)
-            const allShiftsQ = query(
-                collection(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`),
-                where("userId", "==", userId)
-            );
-
-            onSnapshot(allShiftsQ, (snapshot) => {
-                const shifts = [];
-                snapshot.forEach(doc => {
-                    shifts.push({ id: doc.id, ...doc.data() });
-                });
-
-                shifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-                
-                renderShiftHistory(shifts); 
-                renderShiftReport(shifts);
-            }, (error) => {
-                console.error("Error listening to shift data:", error);
-            });
+            // Update Status Bar
+            if (activeShift) {
+                currentShiftIdValue = activeShift.id;
+                statusDisplay.textContent = "On Clock";
+                statusDisplay.className = "font-bold text-red-600";
+                currentShiftId.textContent = activeShift.id;
+                clockInBtn.disabled = true;
+                clockOutBtn.disabled = false;
+            } else {
+                currentShiftIdValue = null;
+                statusDisplay.textContent = "Off Clock";
+                statusDisplay.className = "font-bold text-green-600";
+                currentShiftId.textContent = "None";
+                clockInBtn.disabled = false;
+                clockOutBtn.disabled = true;
+            }
+            
+            renderShiftHistory(shifts); 
+            renderShiftReport(shifts);
         }
 
         function renderShiftHistory(shifts) {
@@ -539,8 +488,7 @@
             if (loadingHistory) loadingHistory.remove();
             shiftHistory.innerHTML = '';
             
-            const recentShifts = shifts.slice(0, 5); 
-
+            const recentShifts = shifts.slice(0, 5);
             if (recentShifts.length === 0) {
                 shiftHistory.innerHTML = '<p class="text-center text-gray-500 py-4">No shift history recorded yet.</p>';
                 return;
@@ -581,8 +529,7 @@
             let completedShiftCount = 0;
             
             const completedShifts = shifts.filter(s => s.status === 'completed');
-            completedShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-
+            
             if (completedShifts.length === 0) {
                 reportTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-4">No completed shifts to report.</td></tr>';
                 totalShiftsDisplay.textContent = '0';
@@ -636,54 +583,23 @@
 
         // --- Initialization ---
 
-        async function initFirebase() {
-            try {
-                setLogLevel('error'); 
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        function initApp() {
+            // Load and update UI immediately using local storage data
+            const shifts = getShifts();
+            updateUI(shifts);
+            startProximityCheck();
 
-                // Initialize services using REAL Firebase modules
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                if (__initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        userIdDisplay.textContent = userId;
-                        showMessage("Authentication successful. Ready to track.", 'green');
-                        attachShiftListener();
-                        startProximityCheck(); 
-                    } else {
-                        userId = null;
-                        userIdDisplay.textContent = 'Not Signed In';
-                        showMessage("Authentication Failed.", 'red');
-                        stopProximityCheck(); 
-                    }
-                });
-
-                // Attach event listeners ONLY after successful initialization check
-                clockInBtn.addEventListener('click', clockIn);
-                clockOutBtn.addEventListener('click', clockOut);
-                showTrackerBtn.addEventListener('click', () => toggleView('tracker'));
-                showReportBtn.addEventListener('click', () => toggleView('report'));
-                
-                toggleView('tracker'); 
-
-            } catch (error) {
-                console.error("CRITICAL Initialization Error:", error);
-                showMessage("CRITICAL ERROR: Firebase setup failed. App may not save data. (Check console)", 'red');
-            }
+            // Set up event listeners for buttons
+            clockInBtn.addEventListener('click', clockIn);
+            clockOutBtn.addEventListener('click', clockOut);
+            showTrackerBtn.addEventListener('click', () => toggleView('tracker'));
+            showReportBtn.addEventListener('click', () => toggleView('report'));
+            
+            toggleView('tracker'); 
         }
 
-        // Call init Firebase when the window loads
-        window.onload = initFirebase;
+        window.onload = initApp;
     </script>
 </body>
 </html>
+
