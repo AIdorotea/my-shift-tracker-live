@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Shift Tracker with Reporting (Live)</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for aesthetic buttons and main container */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        .container {
+            max-width: 420px; /* Mobile width constraint */
+        }
+        .shadow-main {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .report-table th, .report-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .report-table th {
+            background-color: #f3f4f6;
+            font-weight: 600;
+            color: #4b5563;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+        /* Define the pulse animation for urgency */
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: .5;
+            }
+        }
+    </style>
+    
+    <!-- !!! CORE FIREBASE JAVASCRIPT CODE INLINED HERE !!! 
+         This provides necessary functionality for the external Firebase SDK.
+         NOTE: This is the version designed to be hosted on a live server (HTTPS). -->
+    <script type="text/javascript">
+        // Inlining minimal service stubs for external library function calls
+        function initializeApp(config) { return { config: config }; }
+        function getAuth(app) { return { currentUser: { uid: 'live_user_id' } }; }
+        function getFirestore(app) { return {}; }
+        function doc(db, path, id) { return { path, id }; }
+        function collection(db, path) { return { path }; }
+        function query(collectionRef, ...constraints) { return { collectionRef, constraints }; }
+        function where(field, op, value) { return { type: 'where', field, op, value }; }
+        function setLogLevel(level) {}
+        function getDocs() { return Promise.resolve({ docs: [] }); }
+
+        // Mocked functions for the local environment setup ONLY. 
+        // These will be overridden by the *real* firebase imports when hosted on GitHub.
+        window.initializeApp = initializeApp;
+        window.getAuth = getAuth;
+        window.getFirestore = getFirestore;
+        window.doc = doc;
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+        window.setLogLevel = setLogLevel;
+        
+    </script>
+</head>
+<body class="min-h-screen p-4 flex flex-col items-center">
+    <div class="container w-full bg-white p-6 rounded-xl shadow-main mt-8">
+        
+        <!-- Toggle Buttons -->
+        <div class="flex justify-center mb-6 space-x-2">
+            <button id="showTrackerBtn" class="py-2 px-4 rounded-full text-sm font-semibold transition duration-200 bg-indigo-600 text-white hover:bg-indigo-700">
+                Shift Tracker
+            </button>
+            <button id="showReportBtn" class="py-2 px-4 rounded-full text-sm font-semibold transition duration-200 bg-gray-200 text-gray-700 hover:bg-gray-300">
+                Shift Report
+            </button>
+        </div>
+
+        <!-- Shift Tracker View -->
+        <div id="trackerView">
+            <h1 class="text-3xl font-bold text-center text-indigo-700 mb-2">Shift Tracker</h1>
+            <p class="text-center text-sm text-gray-500 mb-6">Location-verified clock-in/out.</p>
+
+            <!-- Geofence Information -->
+            <div id="geofenceInfo" class="bg-blue-50 p-4 rounded-lg mb-6 border-l-4 border-blue-500">
+                <p class="font-semibold text-blue-700">Work Location (Geofence):</p>
+                <p class="text-xs text-blue-600">Lat: <span id="workLat"></span>, Lng: <span id="workLng"></span></p>
+                <p class="text-xs text-blue-600">Radius: <span id="workRadius"></span> meters</p>
+                <p class="text-xs text-blue-600 font-bold mt-2">Status: Location set near London, UK. (Radius 100m)</p>
+            </div>
+
+            <!-- Proximity Reminder Box -->
+            <div id="proximityReminder" class="p-3 rounded-lg text-center hidden mb-6">
+                <!-- Content inserted by JS -->
+            </div>
+
+            <!-- Status & User Info -->
+            <div id="userInfo" class="bg-gray-100 p-4 rounded-lg mb-6">
+                <p class="font-semibold text-gray-700">Status: <span id="statusDisplay" class="font-bold text-red-500">Loading...</span></p>
+                <p class="text-xs text-gray-500 mt-1">User ID: <span id="userIdDisplay" class="font-mono text-xs break-all">...</span></p>
+                <p class="text-xs text-gray-500 mt-1">Current Shift ID: <span id="currentShiftId" class="font-mono text-xs break-all text-indigo-600">None</span></p>
+            </div>
+
+            <!-- Action Buttons: Clock In button starts active to bypass security locks -->
+            <div class="flex space-x-4 mb-8">
+                <button id="clockInBtn" 
+                        class="flex-1 py-3 px-4 rounded-lg font-bold text-white transition duration-300 bg-green-500 hover:bg-green-600 focus:outline-none focus:ring-4 focus:ring-green-300 disabled:opacity-50">
+                    Clock In
+                </button>
+                <button id="clockOutBtn" 
+                        class="flex-1 py-3 px-4 rounded-lg font-bold text-white transition duration-300 bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 disabled:opacity-50"
+                        disabled>
+                    Clock Out
+                </button>
+            </div>
+
+            <!-- Message/Loading Box -->
+            <div id="messageBox" class="p-3 bg-yellow-100 text-yellow-800 rounded-lg hidden"></div>
+
+            <!-- Shift History -->
+            <h2 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-1">Recent Shifts</h2>
+            <div id="shiftHistory" class="space-y-4">
+                <p class="text-center text-gray-500" id="loadingHistory">Loading history...</p>
+            </div>
+        </div>
+
+        <!-- Shift Report View (Hidden by default) -->
+        <div id="reportView" class="hidden">
+            <h1 class="text-3xl font-bold text-center text-indigo-700 mb-6">Shift Report</h1>
+
+            <!-- Summary Card -->
+            <div class="bg-indigo-100 p-4 rounded-xl mb-6 shadow-md">
+                <p class="text-sm font-semibold text-indigo-700">Total Completed Shifts:</p>
+                <p id="totalShifts" class="text-3xl font-bold text-indigo-900">0</p>
+                <p class="text-sm font-semibold text-indigo-700 mt-3">Total Hours Tracked:</p>
+                <p id="totalHours" class="text-3xl font-bold text-indigo-900">0.00</p>
+            </div>
+
+            <!-- Data Table -->
+            <h2 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-1">Completed Shifts Detail</h2>
+            <div class="overflow-x-auto rounded-lg shadow-md border">
+                <table class="w-full report-table" id="reportTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th>Duration (hrs)</th>
+                            <th>In Dist (m)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Report data will be inserted here -->
+                        <tr><td colspan="5" class="text-center text-gray-500 py-4">No completed shifts to report.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+    
+    <script type="module">
+        // Dynamically Import Real Firebase Libraries (This REQUIRES the HTTPS link)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, updateDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Geofence Configuration ---
+        const PROXIMITY_CHECK_INTERVAL = 30000; 
+        
+        const WORK_LOCATION = {
+            lat: 51.4857806, 
+            lng: -0.1995771, 
+            radiusMeters: 100 
+        };
+        
+        // --- Global Variables ---
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let currentShiftIdValue = null;
+        let proximityInterval = null; 
+        let isNearWork = false; 
+
+        // HTML Elements
+        const trackerView = document.getElementById('trackerView');
+        const reportView = document.getElementById('reportView');
+        const showTrackerBtn = document.getElementById('showTrackerBtn');
+        const showReportBtn = document.getElementById('showReportBtn');
+        const statusDisplay = document.getElementById('statusDisplay');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const currentShiftId = document.getElementById('currentShiftId');
+        const clockInBtn = document.getElementById('clockInBtn');
+        const clockOutBtn = document.getElementById('clockOutBtn');
+        const shiftHistory = document.getElementById('shiftHistory');
+        const messageBox = document.getElementById('messageBox');
+        const workLat = document.getElementById('workLat');
+        const workLng = document.getElementById('workLng');
+        const workRadius = document.getElementById('workRadius');
+        const proximityReminder = document.getElementById('proximityReminder');
+        const totalShiftsDisplay = document.getElementById('totalShifts');
+        const totalHoursDisplay = document.getElementById('totalHours');
+        const reportTableBody = document.querySelector('#reportTable tbody');
+
+        // Firestore Config 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const __initial_auth_token = typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : undefined;
+        const SHIFTS_COLLECTION_PATH = `/artifacts/${appId}/users/`; 
+        
+        // Initialize Geofence UI Display
+        workLat.textContent = WORK_LOCATION.lat.toFixed(6);
+        workLng.textContent = WORK_LOCATION.lng.toFixed(6);
+        workRadius.textContent = WORK_LOCATION.radiusMeters;
+
+        // Function to display a temporary message in the message box
+        function showMessage(msg, type = 'yellow', calendarLink = null) {
+            messageBox.innerHTML = '';
+            messageBox.className = `p-3 bg-${type}-100 text-${type}-800 rounded-lg`;
+            messageBox.style.display = 'block';
+
+            const textNode = document.createElement('p');
+            textNode.textContent = msg;
+            messageBox.appendChild(textNode);
+
+            if (calendarLink) {
+                const linkButton = document.createElement('button');
+                linkButton.textContent = 'Add to Google Calendar';
+                linkButton.className = 'mt-3 w-full py-2 px-4 rounded-lg font-bold text-white transition duration-300 bg-indigo-600 hover:bg-indigo-700';
+                linkButton.onclick = () => window.open(calendarLink, '_blank');
+                messageBox.appendChild(linkButton);
+            }
+
+            if (!calendarLink) {
+                setTimeout(() => {
+                    messageBox.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        // --- Calendar Integration Function ---
+
+        function formatToGoogleCalendarTime(isoString) {
+            return isoString.replace(/[-:]/g, '').split('.')[0] + 'Z';
+        }
+
+        function createCalendarEventLink(startTimeISO, endTimeISO, durationHours) {
+            const startFormat = formatToGoogleCalendarTime(startTimeISO);
+            const endFormat = formatToGoogleCalendarTime(endTimeISO);
+            
+            const startDate = new Date(startTimeISO).toLocaleDateString('en-US');
+
+            const title = encodeURIComponent(`[Shift] ${startDate} (${durationHours} hrs)`);
+            const details = encodeURIComponent(`Shift recorded via GPS Shift Tracker App.\nStart: ${new Date(startTimeISO).toLocaleString()}\nEnd: ${new Date(endTimeISO).toLocaleString()}`);
+            const location = encodeURIComponent(`Work Site (Geofence: ${WORK_LOCATION.lat.toFixed(6)}, ${WORK_LOCATION.lng.toFixed(6)})`);
+
+            return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${startFormat}/${endFormat}&details=${details}&location=${location}&sf=true&output=xml`;
+        }
+
+        // --- Geolocation and Distance Calculation ---
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; 
+            const φ1 = lat1 * Math.PI/180;
+            const φ2 = lat2 * Math.PI/180;
+            const Δφ = (lat2-lat1) * Math.PI/180;
+            const Δλ = (lon2-lon1) * Math.PI/180;
+
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+            const d = R * c; 
+            return d;
+        }
+
+        function getCurrentLocation() {
+            return new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    if (!proximityInterval) {
+                        showMessage("Acquiring GPS location...", 'blue');
+                    }
+                    
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            if (!proximityInterval) showMessage("GPS acquired successfully.", 'green');
+                            resolve({
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                                accuracy: position.coords.accuracy,
+                                timestamp: new Date().toISOString()
+                            });
+                        },
+                        (error) => {
+                            let msg = "Geolocation failed: ";
+                            if (error.code === error.PERMISSION_DENIED) {
+                                msg += "Permission Denied. Please enable location services.";
+                            } else if (error.code === error.POSITION_UNAVAILABLE) {
+                                msg += "Location information is unavailable.";
+                            } else if (error.code === error.TIMEOUT) {
+                                msg += "Location request timed out. Try again outside.";
+                            } else {
+                                msg += "An unknown error occurred.";
+                            }
+                            if (!proximityInterval) showMessage(msg, 'red');
+                            reject(new Error(msg));
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        }
+                    );
+                } else {
+                    const msg = "Geolocation is not supported by this browser.";
+                    showMessage(msg, 'red');
+                    reject(new Error(msg));
+                }
+            });
+        }
+        
+        // --- Proximity Check Functions ---
+
+        async function checkProximity() {
+            if (!userId || currentShiftIdValue) {
+                return stopProximityCheck();
+            }
+
+            try {
+                const location = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+                        () => reject(new Error("Low-priority geolocation failed")),
+                        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 } 
+                    );
+                });
+
+                const distance = getDistance(location.lat, location.lng, WORK_LOCATION.lat, WORK_LOCATION.lng);
+                
+                if (distance <= WORK_LOCATION.radiusMeters) {
+                    proximityReminder.classList.remove('hidden');
+                    proximityReminder.classList.add('bg-yellow-100', 'text-yellow-800');
+                    proximityReminder.textContent = `REMINDER: You are ${distance.toFixed(0)}m from work. Click CLOCK IN now!`;
+                    clockInBtn.classList.add('animate-pulse');
+                } else {
+                    proximityReminder.classList.add('hidden');
+                    proximityReminder.classList.remove('bg-yellow-100', 'text-yellow-800');
+                    clockInBtn.classList.remove('animate-pulse');
+                }
+
+            } catch (error) {
+                proximityReminder.classList.add('hidden');
+                clockInBtn.classList.remove('animate-pulse');
+            }
+        }
+
+        function startProximityCheck() {
+            if (proximityInterval) clearInterval(proximityInterval);
+            checkProximity();
+            proximityInterval = setInterval(checkProximity, PROXIMITY_CHECK_INTERVAL);
+        }
+
+        function stopProximityCheck() {
+            if (proximityInterval) {
+                clearInterval(proximityInterval);
+                proximityInterval = null;
+            }
+            proximityReminder.classList.add('hidden');
+            clockInBtn.classList.remove('animate-pulse');
+        }
+
+        // --- Database Functions ---
+        
+        async function clockIn() {
+            // CRITICAL: Ensure AUTH is ready before proceeding
+            if (!userId) {
+                return showMessage("Authentication is still initializing. Please wait a moment.", 'red');
+            }
+
+            try {
+                const location = await getCurrentLocation();
+                
+                const distance = getDistance(
+                    location.lat, location.lng, 
+                    WORK_LOCATION.lat, WORK_LOCATION.lng
+                );
+                
+                if (distance > WORK_LOCATION.radiusMeters) {
+                    return showMessage(
+                        `Clock-in denied. You are ${distance.toFixed(2)}m away from the work location. Max allowed is ${WORK_LOCATION.radiusMeters}m.`, 
+                        'red'
+                    );
+                }
+
+                const shiftData = {
+                    userId: userId,
+                    startTime: location.timestamp,
+                    startLocation: location,
+                    startDistance: distance.toFixed(2), 
+                    endTime: null,
+                    endLocation: null,
+                    endDistance: null,
+                    duration: null,
+                    status: 'active',
+                };
+
+                const shiftsRef = collection(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`);
+                const docRef = await addDoc(shiftsRef, shiftData);
+
+                showMessage(`Clocked in successfully! Distance to site: ${distance.toFixed(2)}m. Shift ID: ${docRef.id}`, 'green');
+                stopProximityCheck(); 
+
+            } catch (error) {
+                console.error("Error during clock in:", error);
+                if (error.message.includes("Geolocation failed")) return;
+                showMessage("Failed to clock in. Check console for details.", 'red');
+            }
+        }
+
+        async function clockOut() {
+            if (!userId || !currentShiftIdValue) return showMessage("No active shift to clock out from.", 'red');
+            
+            try {
+                const location = await getCurrentLocation();
+                const shiftRef = doc(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`, currentShiftIdValue);
+
+                const distance = getDistance(
+                    location.lat, location.lng, 
+                    WORK_LOCATION.lat, WORK_LOCATION.lng
+                );
+                
+                const now = new Date();
+                const startTimeISO = currentShiftId.dataset.startTime;
+                const startTime = new Date(startTimeISO);
+                const durationMs = now.getTime() - startTime.getTime();
+                const durationHours = (durationMs / (1000 * 60 * 60)).toFixed(2);
+                
+                const updateData = {
+                    endTime: location.timestamp,
+                    endLocation: location,
+                    endDistance: distance.toFixed(2), 
+                    duration: parseFloat(durationHours),
+                    status: 'completed',
+                };
+                
+                await updateDoc(shiftRef, updateData);
+
+                const calendarLink = createCalendarEventLink(startTimeISO, updateData.endTime, durationHours);
+                
+                showMessage(
+                    `Clocked out. Duration: ${durationHours} hrs. Data saved to Firestore.`, 
+                    'green', 
+                    calendarLink 
+                );
+                startProximityCheck(); 
+
+            } catch (error) {
+                console.error("Error during clock out:", error);
+                if (error.message.includes("Geolocation failed")) return;
+                showMessage("Failed to clock out. Check console for details.", 'red');
+            }
+        }
+
+        // --- UI & State Management ---
+
+        function attachShiftListener() {
+            if (!db || !userId) return;
+
+            // Listener for the active shift status
+            const activeQ = query(
+                collection(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`),
+                where("userId", "==", userId),
+                where("status", "==", "active")
+            );
+
+            onSnapshot(activeQ, (snapshot) => {
+                if (snapshot.empty) {
+                    currentShiftIdValue = null;
+                    statusDisplay.textContent = "Off Clock";
+                    statusDisplay.className = "font-bold text-green-600";
+                    currentShiftId.textContent = "None";
+                    clockInBtn.disabled = false;
+                    clockOutBtn.disabled = true;
+                    
+                    startProximityCheck(); 
+                } else {
+                    const activeShift = snapshot.docs[0];
+                    currentShiftIdValue = activeShift.id;
+                    
+                    statusDisplay.textContent = "On Clock";
+                    statusDisplay.className = "font-bold text-red-600";
+                    currentShiftId.textContent = activeShift.id;
+                    currentShiftId.dataset.startTime = activeShift.data().startTime; 
+                    clockInBtn.disabled = true; 
+                    clockOutBtn.disabled = false;
+                    
+                    stopProximityCheck(); 
+                }
+            }, (error) => {
+                console.error("Error listening to active shift:", error);
+                showMessage("Error loading active shift status.", 'red');
+            });
+
+            // Listener for all shifts (for history and reporting)
+            const allShiftsQ = query(
+                collection(db, `${SHIFTS_COLLECTION_PATH}${userId}/shifts`),
+                where("userId", "==", userId)
+            );
+
+            onSnapshot(allShiftsQ, (snapshot) => {
+                const shifts = [];
+                snapshot.forEach(doc => {
+                    shifts.push({ id: doc.id, ...doc.data() });
+                });
+
+                shifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+                
+                renderShiftHistory(shifts); 
+                renderShiftReport(shifts);
+            }, (error) => {
+                console.error("Error listening to shift data:", error);
+            });
+        }
+
+        function renderShiftHistory(shifts) {
+            const loadingHistory = document.getElementById('loadingHistory');
+            if (loadingHistory) loadingHistory.remove();
+            shiftHistory.innerHTML = '';
+            
+            const recentShifts = shifts.slice(0, 5); 
+
+            if (recentShifts.length === 0) {
+                shiftHistory.innerHTML = '<p class="text-center text-gray-500 py-4">No shift history recorded yet.</p>';
+                return;
+            }
+
+            recentShifts.forEach(shift => {
+                const isCompleted = shift.status === 'completed';
+                const start = new Date(shift.startTime).toLocaleString();
+                
+                let end = '... In Progress ...';
+                let duration = 'N/A';
+                let durationClass = 'text-gray-500';
+                let endDistance = 'N/A';
+
+                if (isCompleted) {
+                    end = new Date(shift.endTime).toLocaleString();
+                    duration = `${shift.duration} hours`;
+                    durationClass = 'text-green-600 font-semibold';
+                    endDistance = `${shift.endDistance} m`;
+                }
+
+                const shiftElement = document.createElement('div');
+                shiftElement.className = `p-3 rounded-lg border border-gray-200 ${isCompleted ? 'bg-white' : 'bg-indigo-50 border-indigo-300'}`;
+                
+                shiftElement.innerHTML = `
+                    <p class="font-semibold text-sm mb-1 text-gray-800">Shift ID: <span class="text-xs text-gray-500">${shift.id}</span></p>
+                    <p class="text-xs text-gray-600"><strong>Start:</strong> ${start} <span class="font-mono text-gray-400">(${shift.startDistance} m)</span></p>
+                    <p class="text-xs text-gray-600"><strong>End:</strong> ${end} <span class="font-mono text-gray-400">(${endDistance})</span></p>
+                    <p class="text-sm mt-1">Total Time: <span class="${durationClass}">${duration}</span></p>
+                `;
+                shiftHistory.appendChild(shiftElement);
+            });
+        }
+
+        function renderShiftReport(shifts) {
+            reportTableBody.innerHTML = '';
+            let totalHours = 0;
+            let completedShiftCount = 0;
+            
+            const completedShifts = shifts.filter(s => s.status === 'completed');
+            completedShifts.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+            if (completedShifts.length === 0) {
+                reportTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-4">No completed shifts to report.</td></tr>';
+                totalShiftsDisplay.textContent = '0';
+                totalHoursDisplay.textContent = '0.00';
+                return;
+            }
+
+            completedShifts.forEach(shift => {
+                if (shift.duration) {
+                    totalHours += shift.duration;
+                    completedShiftCount++;
+                }
+                
+                const startDate = new Date(shift.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                const startTime = new Date(shift.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                const endTime = new Date(shift.endTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="text-sm">${startDate}</td>
+                    <td class="text-sm">${startTime}</td>
+                    <td class="text-sm">${endTime}</td>
+                    <td class="text-sm font-semibold text-indigo-700">${shift.duration.toFixed(2)}</td>
+                    <td class="text-xs text-gray-500">${shift.startDistance}</td>
+                `;
+                reportTableBody.appendChild(row);
+            });
+
+            totalShiftsDisplay.textContent = completedShiftCount;
+            totalHoursDisplay.textContent = totalHours.toFixed(2);
+        }
+
+        // --- View Toggling ---
+        function toggleView(view) {
+            if (view === 'report') {
+                trackerView.classList.add('hidden');
+                reportView.classList.remove('hidden');
+                showTrackerBtn.classList.remove('bg-indigo-600', 'text-white');
+                showTrackerBtn.classList.add('bg-gray-200', 'text-gray-700');
+                showReportBtn.classList.add('bg-indigo-600', 'text-white');
+                showReportBtn.classList.remove('bg-gray-200', 'text-gray-700');
+            } else { // 'tracker'
+                trackerView.classList.remove('hidden');
+                reportView.classList.add('hidden');
+                showTrackerBtn.classList.add('bg-indigo-600', 'text-white');
+                showTrackerBtn.classList.remove('bg-gray-200', 'text-gray-700');
+                showReportBtn.classList.remove('bg-indigo-600', 'text-white');
+                showReportBtn.classList.add('bg-gray-200', 'text-gray-700');
+            }
+        }
+
+        // --- Initialization ---
+
+        async function initFirebase() {
+            try {
+                setLogLevel('error'); 
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+                // Initialize services using REAL Firebase modules
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                if (__initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = userId;
+                        showMessage("Authentication successful. Ready to track.", 'green');
+                        attachShiftListener();
+                        startProximityCheck(); 
+                    } else {
+                        userId = null;
+                        userIdDisplay.textContent = 'Not Signed In';
+                        showMessage("Authentication Failed.", 'red');
+                        stopProximityCheck(); 
+                    }
+                });
+
+                // Attach event listeners ONLY after successful initialization check
+                clockInBtn.addEventListener('click', clockIn);
+                clockOutBtn.addEventListener('click', clockOut);
+                showTrackerBtn.addEventListener('click', () => toggleView('tracker'));
+                showReportBtn.addEventListener('click', () => toggleView('report'));
+                
+                toggleView('tracker'); 
+
+            } catch (error) {
+                console.error("CRITICAL Initialization Error:", error);
+                showMessage("CRITICAL ERROR: Firebase setup failed. App may not save data. (Check console)", 'red');
+            }
+        }
+
+        // Call init Firebase when the window loads
+        window.onload = initFirebase;
+    </script>
+</body>
+</html>
